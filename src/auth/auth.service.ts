@@ -3,12 +3,15 @@ import { FirebaseService } from '../firebase/firebase.service';
 import { JwtService } from '@nestjs/jwt';
 import { Timestamp } from 'firebase-admin/firestore';
 import { SignInAppleDto } from './dto/signin-apple.dto';
+import { v4 as uuidv4 } from 'uuid';
+import { BlacklistService } from './blacklist/blacklist.service';
 
 @Injectable()
 export class AuthService {
 	constructor(
 		private readonly firebaseService: FirebaseService,
 		private readonly jwtService: JwtService,
+		private readonly blacklistService: BlacklistService
 	) { }
 
 	async signInWithApple(signInDto: SignInAppleDto) {
@@ -54,7 +57,11 @@ export class AuthService {
 
 			internalUserId = userDoc.id;
 
-			const payload = { sub: internalUserId };
+			const payload = {
+				sub: internalUserId,
+				jti: uuidv4(),
+			};
+
 			const accessToken = await this.jwtService.signAsync(payload);
 
 			return {
@@ -66,4 +73,10 @@ export class AuthService {
 			throw new UnauthorizedException('Invalid Apple token');
 		}
 	}
+
+	async logout(jti: string, exp: number): Promise<{ ok: boolean }> {
+		await this.blacklistService.addToBlacklist(jti, exp);
+		return { ok: true };
+	}
+
 }

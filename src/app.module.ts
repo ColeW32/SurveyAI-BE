@@ -17,6 +17,9 @@ import { WebhooksController } from './webhooks/webhooks.controller';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { ProgressModule } from './progress/progress.module';
+import { DisqualificationsModule } from './disqualifications/disqualifications.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -35,7 +38,10 @@ import { APP_GUARD } from '@nestjs/core';
     PurespectrumModule,
     SurveyWallModule,
     SurveySessionsModule,
-    WebhooksModule
+    WebhooksModule,
+    ProgressModule,
+    DisqualificationsModule,
+    UsersModule
   ],
   controllers: [AppController, WebhooksController],
   providers: [

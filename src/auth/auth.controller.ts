@@ -1,8 +1,9 @@
-import { Controller, Post, Body, Version } from '@nestjs/common';
+import { Controller, Post, Body, Version, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignInAppleDto } from './dto/signin-apple.dto';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -28,4 +29,17 @@ export class AuthController {
   signInWithApple(@Body() signInDto: SignInAppleDto) {
     return this.authService.signInWithApple(signInDto);
   }
+
+  @Version('1')
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Log out the current user' })
+  @ApiResponse({ status: 200, description: 'Successfully logged out.', schema: { example: { ok: true } } })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  async logout(@Req() req) {
+    const { jti, exp } = req.user;
+    return this.authService.logout(jti, exp);
+  }
+
 }

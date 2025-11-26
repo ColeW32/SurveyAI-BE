@@ -1,18 +1,38 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { BlacklistService } from './blacklist/blacklist.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-	constructor() {
+	constructor(
+		private readonly blacklistService: BlacklistService,
+		private readonly configService: ConfigService,
+	) {
+		const jwtSecret = configService.get<string>('JWT_SECRET');
+
+		if (!jwtSecret) {
+			throw new Error('JWT_SECRET is not defined in the environment variables!');
+		}
+
 		super({
 			jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
 			ignoreExpiration: false,
-			secretOrKey: '9e4f36b2ad0e453c84a5ff5f02de1c7caa92d394fe7c4bc2808b3e3a7d59c140c01de929c7d7a5bd0fcd9b452b4416a07cbf28d73e1b11dfe9379dbad73fdb34',
+			secretOrKey: jwtSecret,
 		});
 	}
 
 	async validate(payload: any) {
-		return { userId: payload.sub };
+		if (!payload.jti) {
+			throw new UnauthorizedException('Token is missing JTI.');
+		}
+
+		const isBlacklisted = await this.blacklistService.isBlacklisted(payload.jti);
+		if (isBlacklisted) {
+			throw new UnauthorizedException('Token has been revoked.');
+		}
+
+		return { userId: payload.sub, jti: payload.jti, exp: payload.exp };
 	}
 }

@@ -4,6 +4,7 @@ import { PureSpectrumSurvey } from '../purespectrum/purespectrum.service';
 import { FieldValue } from 'firebase-admin/firestore';
 import { RewardService } from '../rewards/rewards.service';
 import { v4 as uuidv4 } from 'uuid';
+import { ProgressService } from 'src/progress/progress.service';
 
 @Injectable()
 export class SurveySessionsService {
@@ -13,9 +14,10 @@ export class SurveySessionsService {
 	constructor(
 		private readonly firebaseService: FirebaseService,
 		private readonly rewardService: RewardService,
+		private readonly progressService: ProgressService,
 	) { }
 
-	async startSurveySession(userId: string, surveyId: string | number): Promise<{ redirectUrl: string }> {
+	async startSurveySession(userId: string, surveyId: string | number): Promise<{ redirectUrl: string, sessionId: string }> {
 		const cacheRef = this.firebaseService.firestore.collection('surveyCache').doc(userId);
 		const cacheDoc = await cacheRef.get();
 
@@ -49,7 +51,7 @@ export class SurveySessionsService {
 		url.searchParams.set('memberid', userId);
 
 		this.logger.log(`Started survey session ${providerSessionId} for user ${userId}`);
-		return { redirectUrl: url.toString() };
+		return { redirectUrl: url.toString(), sessionId: providerSessionId };
 	}
 
 	async completeSurveyByWebhook(payload: { transactionId: string, memberId: string, cpi: number, surveyID: number }): Promise<{ success: boolean; rewardedAmount: number }> {
@@ -102,9 +104,51 @@ export class SurveySessionsService {
 			completedAt: FieldValue.serverTimestamp(),
 			rewardedAmount: payout,
 			webhookPayload: cleanPayload,
+			progressPointsPending: true,
 		});
 
 
 		return { success: true, rewardedAmount: payout };
+	}
+
+	async awardPendingProgressPoints(userId: string, sessionId: string): Promise<any> {
+		const sessionRef = this.firebaseService.firestore.collection(this.sessionsCollection).doc(sessionId);
+
+		const progressPayload = await this.firebaseService.firestore.runTransaction(async (transaction) => {
+			const sessionDoc = await transaction.get(sessionRef);
+
+			if (!sessionDoc.exists) {
+				throw new NotFoundException('Session not found.');
+			}
+
+			const sessionData = sessionDoc.data();
+
+			if (sessionData?.userId !== userId) {
+				throw new ConflictException('User does not own this session.');
+			}
+
+			if (sessionData.status !== 'completed' || !sessionData.progressPointsPending) {
+				this.logger.warn(`No pending progress points to award for session ${sessionId}.`);
+				return null;
+			}
+
+			transaction.update(sessionRef, { progressPointsPending: false });
+
+			return {
+				userId,
+				type: 'completion',
+				surveySessionId: sessionId,
+			};
+		});
+
+		if (progressPayload) {
+			return await this.progressService.addPoints(
+				progressPayload.userId,
+				progressPayload.type as 'completion',
+				progressPayload.surveySessionId,
+			);
+		}
+
+		return { message: 'Progress points already awarded or not applicable.' };
 	}
 }
